@@ -47,6 +47,7 @@ oc apply -f bad_pod.yaml
 - Ensure ACS is correctly configured to detect the specified conditions and respond as expected.
 - Ensure GitLab job is executed and completes without errors.
 
+### GitLab Job output
 ```bash
 $ ansible-playbook ./samples/bad_pod/main.yml
 [WARNING]: provided hosts list is empty, only localhost is available. Note that
