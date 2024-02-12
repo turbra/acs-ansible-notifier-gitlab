@@ -1,0 +1,14 @@
+stages:
+  - 🔐remediation
+
+🙈apply-deny-policy:
+  stage: 🔐remediation
+  before_script:
+    - echo "Logging into OpenShift cluster"
+    - oc login ${OCP_CLUSTER} --token=${OC_TOKEN} --insecure-skip-tls-verify
+  script:
+    - ansible-playbook ./samples/bad_pod/main.yml
+  only:
+    - triggers
+  tags:
+    - fedora-runner-shell

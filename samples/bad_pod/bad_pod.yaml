@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: alpine-test-pod
+  namespace: turbra-hax
+spec:
+  containers:
+  - name: alpine-nikto
+    image: alpine/nikto
+    command: ["sh", "-c", "echo Hello Friend! && nikto.pl && sleep 3600"]

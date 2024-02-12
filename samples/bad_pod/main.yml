@@ -1,0 +1,102 @@
+---
+- hosts: localhost
+  gather_facts: no
+  vars:
+    trigger_payload: "{{ lookup('env', 'TRIGGER_PAYLOAD') }}"
+    network_policy_template: "deny-all-network-policy.yaml.j2"
+    network_policy_rendered: "/tmp/deny-all-network-policy.yaml"
+
+  tasks:
+    - name: Check if the TRIGGER_PAYLOAD file exists
+      ansible.builtin.stat:
+        path: "{{ trigger_payload }}"
+      register: payload_file
+
+    - name: Fail if TRIGGER_PAYLOAD file does not exist
+      ansible.builtin.fail:
+        msg: "TRIGGER_PAYLOAD does not point to a valid file."
+      when: not payload_file.stat.exists
+
+    - name: Read the JSON payload from the file
+      ansible.builtin.slurp:
+        src: "{{ trigger_payload }}"
+      register: slurped_payload
+
+    - name: Decode JSON payload
+      ansible.builtin.set_fact:
+        json_payload: "{{ slurped_payload['content'] | b64decode | from_json }}"
+      when: slurped_payload is defined and slurped_payload.content is defined
+
+    - name: Set facts from JSON payload
+      ansible.builtin.set_fact:
+        policy_sev: "{{ json_payload.alert.policy.severity }}"
+        namespace: "{{ json_payload.alert.namespace }}"
+        container_name: "{{ json_payload.alert.processViolation.processes | map(attribute='containerName') | list }}"
+        policy_name: "{{ json_payload.alert.policy.name }}"
+        policy_desc: "{{ json_payload.alert.policy.description }}"
+        policy_cat: "{{ json_payload.alert.policy.categories | first }}"
+        policy_life: "{{ json_payload.alert.policy.lifecycleStages | first }}"
+        policy_time: "{{ json_payload.alert.processViolation.processes | first | json_query('signal.time') }}"
+      when: json_payload is defined
+
+    - name: Fail if namespace is not found in the payload
+      ansible.builtin.fail:
+        msg: "Namespace not found in the payload. Exiting..."
+      when: namespace == ""
+
+    - name: Generate network policy from template
+      ansible.builtin.template:
+        src: "{{ network_policy_template }}"
+        dest: "{{ network_policy_rendered }}"
+      when: namespace != ""
+
+    - name: Display Policy Severity
+      ansible.builtin.debug:
+        msg: "Policy Severity: {{ policy_sev }}"
+
+    - name: Display Namespace
+      ansible.builtin.debug:
+        msg: "Namespace: {{ namespace }}"
+
+    - name: Display Container Name
+      ansible.builtin.debug:
+        msg: "Container Name: {{ container_name | join(', ') }}"
+
+    - name: Display Policy Name
+      ansible.builtin.debug:
+        msg: "Policy Name: {{ policy_name }}"
+
+    - name: Display Policy Description
+      ansible.builtin.debug:
+        msg: "Policy Description: {{ policy_desc }}"
+
+    - name: Display Policy Categories
+      ansible.builtin.debug:
+        msg: "Policy Categories: {{ policy_cat }}"
+
+    - name: Display Policy Lifecycle
+      ansible.builtin.debug:
+        msg: "Policy Lifecycle: {{ policy_life }}"
+
+    - name: Display Violation Date/Time
+      ansible.builtin.debug:
+        msg: "Violation Date/Time: {{ policy_time }}"
+    
+    - name: Display the content of the generated network policy
+      ansible.builtin.command:
+        cmd: cat "{{ network_policy_rendered }}"
+      register: cat_output
+      when: namespace != ""
+      
+    - name: Show the content of the network policy file
+      ansible.builtin.debug:
+        var: cat_output.stdout
+      when: cat_output.stdout is defined and namespace != ""
+        
+    - name: Apply the network policy to the namespace
+      ansible.builtin.k8s:
+        #kubeconfig: "/path/to/your/kubeconfig"
+        state: present
+        namespace: "{{ namespace }}"
+        definition: "{{ lookup('file', network_policy_rendered) }}"
+      when: namespace != ""
