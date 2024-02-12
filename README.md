@@ -12,7 +12,7 @@ The key components of this setup include:
 - [Setting Up GitLab Project Triggers](./docs/README-GitLab-Project-Triggers.md): Detailed instructions on setting up GitLab project triggers for automated pipeline execution.
 - [Creating ACS Generic Webhook Integration](./docs/README-ACS-Webhook-Integration.md): Guide on configuring ACS to trigger external services using generic webhooks.
 - [Applying ACS Webhook Notifier to Existing Policies](./docs/README-ACS-Webhook-Notifier-Policies.md): Steps to apply a generic webhook notifier to existing ACS policies.
-- [Samples](./samples/readme.md): _bad pod_ deployment sample use case
+- [Samples](./samples/bad_pod/readme.md): _bad pod_ deployment sample use case
 
 ## Components
 
