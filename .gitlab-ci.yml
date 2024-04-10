@@ -8,6 +8,7 @@ stages:
     - oc login ${OCP_CLUSTER} --token=${OC_TOKEN} --insecure-skip-tls-verify
   script:
     - ansible-playbook ./samples/bad_pod/main.yml
+    - ansible-playbook ./samples/bad_pod_ai/main.yml
   only:
     - triggers
   tags:
