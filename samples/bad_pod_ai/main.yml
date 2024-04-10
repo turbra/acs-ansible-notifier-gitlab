@@ -1,0 +1,98 @@
+---
+- hosts: localhost
+  gather_facts: no
+  vars:
+    trigger_payload: "{{ lookup('env', 'TRIGGER_PAYLOAD') }}"
+    api_endpoint_ollama: "http://<REPLACE_ME>:3002/ollama/api/generate" # Replace with relevant endpoint
+    ollama_auth_token: "<REPLACE_ME>" # Replace with ollama token
+    ollama_model: "mistral:7b-instruct-v0.2-q5_K_M" # Replace with your preferred model
+    ollama_prompt_acs: "<REPLACE_ME>" # Replace with your own prompt
+
+  tasks:
+    - name: Check if the TRIGGER_PAYLOAD file exists
+      ansible.builtin.stat:
+        path: "{{ trigger_payload }}"
+      register: payload_file
+
+    - name: Fail if TRIGGER_PAYLOAD file does not exist
+      ansible.builtin.fail:
+        msg: "TRIGGER_PAYLOAD does not point to a valid file."
+      when: not payload_file.stat.exists
+
+    - name: Read the JSON payload from the file
+      ansible.builtin.slurp:
+        src: "{{ trigger_payload }}"
+      register: slurped_payload
+
+    - name: Decode JSON payload
+      ansible.builtin.set_fact:
+        json_payload: "{{ slurped_payload['content'] | b64decode | from_json }}"
+      when: slurped_payload is defined and slurped_payload.content is defined
+    
+    - name: Extract required data and write to a file
+      ansible.builtin.copy:
+        dest: "./acs_violation_data.json"
+        content: |
+          {
+            "severity": "{{ json_payload.alert.policy.severity }}",
+            "namespace": "{{ json_payload.alert.namespace }}",
+            "containerNames": "{{ json_payload.alert.processViolation.processes | map(attribute='containerName') | list }}",
+            "policyName": "{{ json_payload.alert.policy.name }}",
+            "policyDescription": "{{ json_payload.alert.policy.description }}",
+            "policyCategory": "{{ json_payload.alert.policy.categories | first }}",
+            "lifecycleStage": "{{ json_payload.alert.policy.lifecycleStages | first }}",
+            "violationTime": "{{ json_payload.alert.processViolation.processes | first | json_query('signal.time') }}"
+          }
+      when: json_payload is defined
+
+    - name: Read extracted data from file
+      ansible.builtin.slurp:
+        src: "./acs_violation_data.json"
+      register: file_content
+      when: json_payload is defined
+
+    - name: Convert JSON data to a string formatted as required
+      ansible.builtin.set_fact:
+        json_data_formatted: >
+          containerNames: {{ (json_payload.alert.processViolation.processes | map(attribute='containerName') | list) | to_json }}
+          lifecycleStage: {{ json_payload.alert.policy.lifecycleStages | first | to_json }}
+          namespace: {{ json_payload.alert.namespace | to_json }}
+          policyCategory: {{ (json_payload.alert.policy.categories | first) | to_json }}
+          policyDescription: {{ json_payload.alert.policy.description | to_json }}
+          policyName: {{ json_payload.alert.policy.name | to_json }}
+          severity: {{ json_payload.alert.policy.severity | to_json }}
+          violationTime: {{ (json_payload.alert.processViolation.processes | first | json_query('signal.time')) | to_json }}
+      when: json_payload is defined
+
+    - name: Combine prompt and formatted JSON data into a payload variable
+      ansible.builtin.set_fact:
+        ollama_payload: "{{ ollama_prompt_acs }}\n\n{{ json_data_formatted }}"
+      when: json_data_formatted is defined
+
+    - name: Debug - Show combined payload
+      ansible.builtin.debug:
+        var: ollama_payload
+      when: ollama_payload is defined
+
+    - name: Send data to Ollama AI
+      ansible.builtin.uri:
+        url: "{{ api_endpoint_ollama }}"
+        method: POST
+        body: 
+          prompt: "{{ ollama_payload }}"
+          model: "{{ ollama_model }}"
+          stream: "false"
+          format: "json"
+        body_format: json
+        headers:
+          Authorization: "Bearer {{ ollama_auth_token }}"
+          Content-Type: "application/json"
+        status_code: 200
+        return_content: yes
+      register: ollama_response
+      when: ollama_payload is defined
+
+    - name: Display Ollama AI response
+      ansible.builtin.debug:
+        var: ollama_response
+      when: ollama_response is defined
